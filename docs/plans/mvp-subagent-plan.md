@@ -1,6 +1,6 @@
 # AutoDarwin MVP 未完成项细化与并行开发评估
 
-基于 `docs/autodarwin-mvp-unfinished.md` 的细化任务清单。
+基于 `docs/plans/mvp-unfinished.md` 的细化任务清单。
 
 ## 1. 任务拆解（按优先级）
 

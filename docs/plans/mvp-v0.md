@@ -174,8 +174,8 @@ AutoDarwin/
 ├─ evolve.py
 ├─ results.jsonl
 └─ docs/
-   ├─ autodarwin-mvp-v0.md
-   └─ autodarwin-future-plan.md
+   ├─ plans/mvp-v0.md
+   └─ plans/future-plan.md
 ```
 
 ---

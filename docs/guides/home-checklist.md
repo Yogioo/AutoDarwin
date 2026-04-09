@@ -34,8 +34,8 @@ autodarwin.bat core-ui
 
 手动模式（可选）：
 ```bat
-autodarwin.bat core --jobs 4 --progress-file .autodarwin/progress.jsonl
-python tools/progress_view.py --file .autodarwin/progress.jsonl
+autodarwin.bat core --jobs 4 --progress-file .autodarwin/progress.jsonl --case-log-dir .autodarwin/case-logs
+python tools/progress_web.py --file .autodarwin/progress.jsonl --case-log-dir .autodarwin/case-logs --open-browser
 ```
 
 预期：
@@ -87,4 +87,5 @@ autodarwin.bat holdout
 - 默认 `--progress auto`：仅在交互终端显示单行进度，不刷屏
 - 强制开启：`--progress on`
 - 关闭：`--progress off`
-- 旁路可视化：`--progress-file .autodarwin/progress.jsonl` + `python tools/progress_view.py`
+- 旁路可视化（推荐）：`--progress-file .autodarwin/progress.jsonl` + `python tools/progress_web.py --open-browser`
+- 文本可视化（备用）：`python tools/progress_view.py --file .autodarwin/progress.jsonl`
