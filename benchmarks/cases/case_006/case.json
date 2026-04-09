@@ -1,0 +1,14 @@
+{
+  "id": "case_006",
+  "name": "edit-readme-installation-section",
+  "description": "Update only the targeted README requirement and avoid unrelated edits.",
+  "prompt": "请把 README 中 Installation 小节里的 Python 版本要求从 3.10 改成 3.11，除此之外不要做其他修改。",
+  "workspace": "workspace",
+  "max_seconds": 60,
+  "tools": ["read", "bash", "edit", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["constrained-edit", "readme", "precision"]
+}

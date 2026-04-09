@@ -1,0 +1,3 @@
+service: autodarwin
+timeout: 10
+retries: 2

@@ -1,0 +1,14 @@
+{
+  "id": "case_005",
+  "name": "fix-path-join-bug",
+  "description": "Fix a path handling bug in report export script.",
+  "prompt": "请修复这个脚本中的路径问题，并确认检查脚本通过。只做必要修改。",
+  "workspace": "workspace",
+  "max_seconds": 90,
+  "tools": ["read", "bash", "edit", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["bugfix", "path", "python"]
+}

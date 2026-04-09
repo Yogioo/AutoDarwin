@@ -1,0 +1,18 @@
+{
+  "id": "case_011",
+  "name": "holdout-single-config-change",
+  "description": "Update one json field in config.json only.",
+  "prompt": "请把 `config.json` 里的 `retries` 改成 5。不要修改任何其他文件。",
+  "workspace": "workspace",
+  "max_seconds": 60,
+  "tools": ["read", "edit", "write"],
+  "constraints": {
+    "allow_paths": ["config.json"],
+    "max_changed_files": 1
+  },
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["holdout", "constrained-edit", "json"]
+}

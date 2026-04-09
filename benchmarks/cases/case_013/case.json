@@ -1,0 +1,20 @@
+{
+  "id": "case_013",
+  "name": "holdout-fix-slugify-bug",
+  "description": "Fix slugify behavior without touching tests.",
+  "prompt": "请修复 slugify 的 bug：多个空白字符应该被压缩为单个连字符。只做必要修改，不要修改测试文件。",
+  "workspace": "workspace",
+  "max_seconds": 90,
+  "tools": ["read", "bash", "edit", "write"],
+  "constraints": {
+    "forbid_paths": ["tests/"],
+    "forbid_globs": ["tests/**"],
+    "max_changed_files": 1,
+    "max_changed_lines": 2
+  },
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["holdout", "bugfix", "python"]
+}

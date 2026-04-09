@@ -1,0 +1,14 @@
+{
+  "id": "case_007",
+  "name": "single-file-config-edit",
+  "description": "Change timeout in config.yaml only.",
+  "prompt": "请把 `config.yaml` 中的 `timeout` 改为 30。不要修改任何其他文件。",
+  "workspace": "workspace",
+  "max_seconds": 60,
+  "tools": ["read", "edit", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["constrained-edit", "config"]
+}

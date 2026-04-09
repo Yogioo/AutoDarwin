@@ -1,0 +1,14 @@
+{
+  "id": "case_003",
+  "name": "fix-off-by-one-bug",
+  "description": "Fix a small off-by-one bug and make tests pass without modifying tests.",
+  "prompt": "请修复项目中的 bug，并确保测试通过。只做必要修改，不要修改测试文件。",
+  "workspace": "workspace",
+  "max_seconds": 90,
+  "tools": ["read", "bash", "edit", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["bugfix", "python", "minimal-edit", "testing"]
+}

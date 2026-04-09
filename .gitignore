@@ -1,0 +1,10 @@
+# 忽略自动研究目录
+/auto_research/
+/auto research/
+
+# Python cache
+__pycache__/
+
+# AutoDarwin runtime artifacts
+.autodarwin/
+results.jsonl

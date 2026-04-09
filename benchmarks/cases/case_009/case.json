@@ -1,0 +1,18 @@
+{
+  "id": "case_009",
+  "name": "holdout-locate-config-file",
+  "description": "Find where SERVICE_REGION is defined and write path to answer.txt.",
+  "prompt": "请找出 `SERVICE_REGION` 这个配置定义所在文件，并把相对路径写入根目录 `answer.txt`。只写路径，不要修改其他文件。",
+  "workspace": "repo",
+  "max_seconds": 60,
+  "tools": ["read", "bash", "write"],
+  "constraints": {
+    "allow_paths": ["answer.txt"],
+    "max_changed_files": 1
+  },
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["holdout", "retrieval", "config"]
+}

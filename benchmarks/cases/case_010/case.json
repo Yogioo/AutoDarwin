@@ -1,0 +1,20 @@
+{
+  "id": "case_010",
+  "name": "holdout-fix-math-bug",
+  "description": "Fix a simple function bug without touching tests.",
+  "prompt": "请修复项目中的 bug，并确保行为正确。只做必要修改，不要修改测试文件。",
+  "workspace": "workspace",
+  "max_seconds": 90,
+  "tools": ["read", "bash", "edit", "write"],
+  "constraints": {
+    "forbid_paths": ["tests/"],
+    "forbid_globs": ["tests/**"],
+    "max_changed_files": 1,
+    "max_changed_lines": 2
+  },
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["holdout", "bugfix", "python"]
+}

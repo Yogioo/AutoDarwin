@@ -1,0 +1,5 @@
+{
+  "service": "autodarwin",
+  "retries": 5,
+  "timeout": 30
+}

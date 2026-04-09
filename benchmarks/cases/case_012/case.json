@@ -1,0 +1,20 @@
+{
+  "id": "case_012",
+  "name": "holdout-locate-class-definition",
+  "description": "Find where RegionResolver class is defined and write path to answer.txt.",
+  "prompt": "请找出 `RegionResolver` 这个类定义所在文件，并把相对路径写入根目录 `answer.txt`。只写路径，不要修改其他文件。",
+  "workspace": "repo",
+  "max_seconds": 60,
+  "tools": ["read", "bash", "write"],
+  "constraints": {
+    "allow_paths": ["answer.txt"],
+    "allow_globs": ["answer.*"],
+    "max_changed_files": 1,
+    "max_changed_lines": 2
+  },
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["holdout", "retrieval", "repo-understanding"]
+}

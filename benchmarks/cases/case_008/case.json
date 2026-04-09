@@ -1,0 +1,14 @@
+{
+  "id": "case_008",
+  "name": "fix-and-verify-formatting-bug",
+  "description": "Fix a small formatting bug and keep the repository clean while the verification script passes.",
+  "prompt": "请修复 bug，并在完成后运行 `bash verify.sh` 验证修复有效。不要修改测试文件。",
+  "workspace": "workspace",
+  "max_seconds": 90,
+  "tools": ["read", "bash", "edit", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["bugfix", "validation", "python", "testing"]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "case_001",
+  "name": "locate-function-definition",
+  "description": "Locate a function definition and write the exact relative path to answer.txt.",
+  "prompt": "请找出 `build_release_note` 这个函数定义所在的文件路径，并将答案仅写入仓库根目录的 `answer.txt`，内容只包含相对路径，不要修改其他文件。",
+  "workspace": "workspace",
+  "max_seconds": 60,
+  "tools": ["read", "bash", "edit", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["retrieval", "repo-understanding", "output-discipline"]
+}

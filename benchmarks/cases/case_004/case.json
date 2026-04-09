@@ -1,0 +1,14 @@
+{
+  "id": "case_004",
+  "name": "fix-broken-import",
+  "description": "Fix an import typo so runner works again.",
+  "prompt": "请修复当前项目中导致程序无法运行的问题，并验证结果正确。只做必要修改，不要修改测试文件。",
+  "workspace": "workspace",
+  "max_seconds": 90,
+  "tools": ["read", "bash", "edit", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["bugfix", "import", "python"]
+}

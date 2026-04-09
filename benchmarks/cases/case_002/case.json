@@ -1,0 +1,14 @@
+{
+  "id": "case_002",
+  "name": "locate-bad-port-config",
+  "description": "Find the wrong port config and write KEY=VALUE into answer.txt.",
+  "prompt": "请找出导致服务端口错误的配置项，并将结果按 `KEY=VALUE` 写入仓库根目录 `answer.txt`。只输出这一行，不要修改其他文件。",
+  "workspace": "fixture",
+  "max_seconds": 60,
+  "tools": ["read", "bash", "write"],
+  "check": {
+    "type": "script",
+    "path": "check.bat"
+  },
+  "tags": ["retrieval", "config", "output-discipline"]
+}
