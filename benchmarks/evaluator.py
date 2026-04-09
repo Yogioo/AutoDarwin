@@ -5,12 +5,15 @@ import difflib
 import fnmatch
 import json
 import os
+import queue
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -250,6 +253,96 @@ def run_script_check(script_path: Path, cwd: Path, env: dict[str, str], timeout:
     )
 
 
+def run_subprocess_with_chat_stream(
+    cmd: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    timeout: int | None,
+    case_id: str,
+    progress_file: Path | None,
+) -> subprocess.CompletedProcess[bytes]:
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(cwd.resolve()),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    q: queue.Queue[tuple[str, str]] = queue.Queue()
+
+    def reader(stream: Any, kind: str) -> None:
+        try:
+            while True:
+                chunk = stream.read(1)
+                if not chunk:
+                    break
+                q.put((kind, chunk))
+        finally:
+            q.put((kind, ""))
+
+    if proc.stdout is None or proc.stderr is None:
+        raise RuntimeError("failed to start subprocess with pipes")
+
+    t_out = threading.Thread(target=reader, args=(proc.stdout, "stdout"), daemon=True)
+    t_err = threading.Thread(target=reader, args=(proc.stderr, "stderr"), daemon=True)
+    t_out.start()
+    t_err.start()
+
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    preview = ""
+    done_streams: set[str] = set()
+    start = time.perf_counter()
+    last_emit = 0.0
+
+    while True:
+        if timeout is not None and (time.perf_counter() - start) > timeout:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=2)
+            raise subprocess.TimeoutExpired(cmd, timeout)
+
+        try:
+            kind, chunk = q.get(timeout=0.1)
+            if chunk == "":
+                done_streams.add(kind)
+            elif kind == "stdout":
+                stdout_parts.append(chunk)
+                preview = (preview + chunk)[-160:]
+            else:
+                stderr_parts.append(chunk)
+        except queue.Empty:
+            pass
+
+        now = time.perf_counter()
+        if now - last_emit >= 0.8 and preview.strip():
+            emit_progress_event(
+                progress_file,
+                {
+                    "type": "case_chat",
+                    "case_id": case_id,
+                    "text": preview.replace("\n", " ")[-120:],
+                },
+            )
+            last_emit = now
+
+        if proc.poll() is not None and done_streams == {"stdout", "stderr"} and q.empty():
+            break
+
+    return subprocess.CompletedProcess(
+        args=cmd,
+        returncode=proc.returncode if proc.returncode is not None else 1,
+        stdout="".join(stdout_parts).encode("utf-8", errors="replace"),
+        stderr="".join(stderr_parts).encode("utf-8", errors="replace"),
+    )
+
+
 def run_case_check(case: dict[str, Any], case_dir: Path, cwd: Path, env: dict[str, str], timeout: int | None = None) -> subprocess.CompletedProcess[bytes]:
     check = case.get("check", {})
     check_type = str(check.get("type", "script")).strip().lower() or "script"
@@ -277,6 +370,29 @@ def print_completed_process_output(proc: subprocess.CompletedProcess[bytes]) -> 
         print(proc.stderr.decode("utf-8", errors="replace"), end="", file=sys.stderr)
 
 
+def append_case_log(log_path: Path | None, title: str, proc: subprocess.CompletedProcess[bytes] | None = None) -> None:
+    if log_path is None:
+        return
+    parts = [f"\n==== {title} ====\n"]
+    if proc is not None:
+        parts.append(f"returncode: {proc.returncode}\n")
+        stdout = (proc.stdout or b"").decode("utf-8", errors="replace")
+        stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
+        if stdout:
+            parts.append("[stdout]\n")
+            parts.append(stdout)
+            if not stdout.endswith("\n"):
+                parts.append("\n")
+        if stderr:
+            parts.append("[stderr]\n")
+            parts.append(stderr)
+            if not stderr.endswith("\n"):
+                parts.append("\n")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write("".join(parts))
+
+
 def classify_agent_failure(returncode: int | None, stderr: bytes | None) -> str:
     text = (stderr or b"").decode("utf-8", errors="replace").lower()
     if returncode in {127, 9009}:
@@ -300,11 +416,14 @@ def execute_case(
     keep_temp: bool = False,
     verbose: bool = True,
     seed: int | None = None,
+    progress_file: Path | None = None,
+    case_log_dir: Path | None = None,
 ) -> CaseResult:
     case = load_case(case_dir)
     case_id = case["id"]
     name = case.get("name", case_id)
     max_seconds = int(case.get("max_seconds", 90))
+    log_path = (case_log_dir / f"{case_id}.log") if case_log_dir is not None else None
     workspace_name = str(case.get("workspace", "workspace"))
     constraints = case.get("constraints")
 
@@ -335,6 +454,7 @@ def execute_case(
     try:
         stage = "agent"
         agent_returncode: int | None = None
+        emit_progress_event(progress_file, {"type": "case_stage", "case_id": case_id, "stage": "agent"})
         if agent_cmd is None:
             runner = (ROOT.parent / "runner.py").resolve()
             runner_cmd = [sys.executable, str(runner), "--timeout", str(max_seconds)]
@@ -343,14 +463,20 @@ def execute_case(
                 runner_cmd += ["--tools", ",".join(tools)]
             if seed is not None:
                 runner_cmd += ["--seed", str(seed)]
-            agent_proc = subprocess.run(
+            agent_proc = run_subprocess_with_chat_stream(
                 runner_cmd,
-                cwd=str(temp_workspace.resolve()),
+                cwd=temp_workspace,
                 env=env,
-                capture_output=True,
                 timeout=max_seconds,
+                case_id=case_id,
+                progress_file=progress_file,
             )
             agent_returncode = agent_proc.returncode
+            append_case_log(log_path, "agent", agent_proc)
+            tail_text = (agent_proc.stdout or b"").decode("utf-8", errors="replace").replace("\n", " ")[-120:]
+            if tail_text.strip():
+                emit_progress_event(progress_file, {"type": "case_chat", "case_id": case_id, "text": tail_text})
+            emit_progress_event(progress_file, {"type": "case_stage", "case_id": case_id, "stage": "agent_done", "returncode": agent_returncode})
             if verbose:
                 print_completed_process_output(agent_proc)
             if agent_proc.returncode != 0:
@@ -367,6 +493,11 @@ def execute_case(
         else:
             agent_proc = run_shell(agent_cmd, cwd=temp_workspace, env=env, timeout=max_seconds)
             agent_returncode = agent_proc.returncode
+            append_case_log(log_path, "agent", agent_proc)
+            tail_text = (agent_proc.stdout or b"").decode("utf-8", errors="replace").replace("\n", " ")[-120:]
+            if tail_text.strip():
+                emit_progress_event(progress_file, {"type": "case_chat", "case_id": case_id, "text": tail_text})
+            emit_progress_event(progress_file, {"type": "case_stage", "case_id": case_id, "stage": "agent_done", "returncode": agent_returncode})
             if verbose:
                 print_completed_process_output(agent_proc)
             if agent_proc.returncode != 0:
@@ -382,7 +513,10 @@ def execute_case(
                 )
 
         stage = "check"
+        emit_progress_event(progress_file, {"type": "case_stage", "case_id": case_id, "stage": "check"})
         check_proc = run_case_check(case, case_dir=case_dir, cwd=temp_workspace, env=env, timeout=max_seconds)
+        append_case_log(log_path, "check", check_proc)
+        emit_progress_event(progress_file, {"type": "case_stage", "case_id": case_id, "stage": "check_done", "returncode": check_proc.returncode})
         if verbose:
             print_completed_process_output(check_proc)
 
@@ -428,6 +562,8 @@ def execute_case(
     except subprocess.TimeoutExpired:
         duration = time.perf_counter() - start
         timeout_reason = "agent_timeout" if stage == "agent" else "check_timeout"
+        append_case_log(log_path, f"timeout:{timeout_reason}")
+        emit_progress_event(progress_file, {"type": "case_stage", "case_id": case_id, "stage": timeout_reason})
         return CaseResult(
             case_id=case_id,
             name=name,
@@ -438,6 +574,8 @@ def execute_case(
         )
     except Exception as exc:
         duration = time.perf_counter() - start
+        append_case_log(log_path, f"internal_error: {exc}")
+        emit_progress_event(progress_file, {"type": "case_stage", "case_id": case_id, "stage": "internal_error", "message": str(exc)})
         return CaseResult(
             case_id=case_id,
             name=name,
@@ -456,6 +594,28 @@ def execute_case(
 
 def format_seconds(value: float) -> str:
     return f"{value:.2f}s"
+
+
+def format_progress_line(total: int, done: int, passed: int, failed: int, crashed: int, running_labels: list[str]) -> str:
+    running_text = ", ".join(running_labels) if running_labels else "-"
+    return f"[progress] {done}/{total} done | pass={passed} fail={failed} crash={crashed} | running: {running_text}"
+
+
+def print_progress_line(line: str) -> None:
+    print("\r" + line + " " * 8, end="", file=sys.stderr, flush=True)
+
+
+def clear_progress_line() -> None:
+    print("\r" + " " * 200 + "\r", end="", file=sys.stderr, flush=True)
+
+
+def emit_progress_event(progress_file: Path | None, payload: dict[str, Any]) -> None:
+    if progress_file is None:
+        return
+    event = {"ts": time.time(), **payload}
+    progress_file.parent.mkdir(parents=True, exist_ok=True)
+    with progress_file.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
 def build_summary(suite: str, results: list[CaseResult], suite_seconds: float) -> dict[str, Any]:
@@ -493,7 +653,14 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="List case ids in the suite and exit")
     parser.add_argument("--json", action="store_true", help="Print summary as JSON")
     parser.add_argument("--seed", type=int, default=None, help="Optional deterministic seed")
+    parser.add_argument("--jobs", type=int, default=1, help="Number of parallel worker processes (default: 1)")
+    parser.add_argument("--progress", choices=["auto", "on", "off"], default="auto", help="Progress display mode (default: auto)")
+    parser.add_argument("--progress-file", default=None, help="Optional JSONL event file for external progress UI")
+    parser.add_argument("--case-log-dir", default=None, help="Optional directory for per-case stdout/stderr logs")
     args = parser.parse_args()
+
+    if args.jobs < 1:
+        parser.error("--jobs must be >= 1")
 
     case_ids = load_suite(args.suite)
     if args.list:
@@ -501,30 +668,210 @@ def main() -> int:
             print(case_id)
         return 0
 
-    results: list[CaseResult] = []
+    results: list[CaseResult | None] = [None] * len(case_ids)
     suite_start = time.perf_counter()
     verbose = not args.json
+    live_progress = verbose and (args.progress == "on" or (args.progress == "auto" and sys.stderr.isatty()))
+    progress_file = Path(args.progress_file) if args.progress_file else None
+    case_log_dir = Path(args.case_log_dir) if args.case_log_dir else None
 
+    if progress_file is not None:
+        progress_file.parent.mkdir(parents=True, exist_ok=True)
+        progress_file.write_text("", encoding="utf-8")
+    if case_log_dir is not None:
+        case_log_dir.mkdir(parents=True, exist_ok=True)
+    emit_progress_event(
+        progress_file,
+        {
+            "type": "suite_start",
+            "suite": args.suite,
+            "total_cases": len(case_ids),
+            "jobs": args.jobs,
+        },
+    )
+
+    valid_tasks: list[tuple[int, Path, int | None]] = []
     for idx, case_id in enumerate(case_ids):
         case_dir = CASES_DIR / case_id
         case_seed = args.seed + idx if args.seed is not None else None
         if not case_dir.exists():
             if verbose:
                 print(f"[missing] {case_id}: case directory not found", file=sys.stderr)
-            results.append(CaseResult(case_id, case_id, "crash", 0.0, message="missing case directory", reason="missing_case_dir"))
+            missing_result = CaseResult(case_id, case_id, "crash", 0.0, message="missing case directory", reason="missing_case_dir")
+            results[idx] = missing_result
+            emit_progress_event(
+                progress_file,
+                {
+                    "type": "case_done",
+                    "suite": args.suite,
+                    "index": idx,
+                    "case_id": case_id,
+                    "name": case_id,
+                    "status": missing_result.status,
+                    "reason": missing_result.reason,
+                    "duration_seconds": missing_result.duration_seconds,
+                    "log_path": str(case_log_dir / f"{case_id}.log") if case_log_dir is not None else None,
+                },
+            )
             continue
+        valid_tasks.append((idx, case_dir, case_seed))
 
+    if args.jobs == 1 or len(valid_tasks) <= 1:
+        for idx, case_dir, case_seed in valid_tasks:
+            emit_progress_event(
+                progress_file,
+                {
+                    "type": "case_start",
+                    "suite": args.suite,
+                    "index": idx,
+                    "case_id": case_dir.name,
+                    "name": case_dir.name,
+                },
+            )
+            if verbose:
+                print(f"==> {case_dir.name}")
+            result = execute_case(
+                case_dir,
+                args.agent_cmd,
+                keep_temp=args.keep_temp,
+                verbose=verbose,
+                seed=case_seed,
+                progress_file=progress_file,
+                case_log_dir=case_log_dir,
+            )
+            results[idx] = result
+            emit_progress_event(
+                progress_file,
+                {
+                    "type": "case_done",
+                    "suite": args.suite,
+                    "index": idx,
+                    "case_id": result.case_id,
+                    "name": result.name,
+                    "status": result.status,
+                    "reason": result.reason,
+                    "duration_seconds": result.duration_seconds,
+                    "log_path": str(case_log_dir / f"{result.case_id}.log") if case_log_dir is not None else None,
+                },
+            )
+            if verbose:
+                print(f"    {result.status:5s}  {format_seconds(result.duration_seconds)}  {result.name}")
+                if result.message:
+                    print(f"    note: {result.message}")
+    else:
         if verbose:
-            print(f"==> {case_id}")
-        result = execute_case(case_dir, args.agent_cmd, keep_temp=args.keep_temp, verbose=verbose, seed=case_seed)
-        results.append(result)
-        if verbose:
-            print(f"    {result.status:5s}  {format_seconds(result.duration_seconds)}  {result.name}")
-            if result.message:
-                print(f"    note: {result.message}")
+            print(f"[parallel] jobs={args.jobs}")
+        max_workers = min(args.jobs, len(valid_tasks))
+        with ProcessPoolExecutor(max_workers=max_workers) as pool:
+            future_to_meta = {}
+            for idx, case_dir, case_seed in valid_tasks:
+                future = pool.submit(
+                    execute_case,
+                    case_dir,
+                    args.agent_cmd,
+                    args.keep_temp,
+                    False,
+                    case_seed,
+                    progress_file,
+                    case_log_dir,
+                )
+                future_to_meta[future] = (idx, case_dir.name, time.perf_counter())
+                emit_progress_event(
+                    progress_file,
+                    {
+                        "type": "case_start",
+                        "suite": args.suite,
+                        "index": idx,
+                        "case_id": case_dir.name,
+                        "name": case_dir.name,
+                    },
+                )
+
+            pending = set(future_to_meta)
+            while pending:
+                done_now, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
+
+                if live_progress:
+                    done_count = sum(1 for r in results if r is not None)
+                    passed = sum(1 for r in results if r is not None and r.status == "pass")
+                    failed = sum(1 for r in results if r is not None and r.status == "fail")
+                    crashed = sum(1 for r in results if r is not None and r.status == "crash")
+                    now = time.perf_counter()
+                    running_labels: list[str] = []
+                    for future in list(pending)[:4]:
+                        _, case_id, started_at = future_to_meta[future]
+                        running_labels.append(f"{case_id}({int(now - started_at)}s)")
+                    line = format_progress_line(len(case_ids), done_count, passed, failed, crashed, running_labels)
+                    print_progress_line(line)
+
+                for future in done_now:
+                    idx, case_id, _ = future_to_meta[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        result = CaseResult(
+                            case_id=case_id,
+                            name=case_id,
+                            status="crash",
+                            duration_seconds=0.0,
+                            message=str(exc),
+                            reason="internal_error",
+                        )
+                    results[idx] = result
+                    emit_progress_event(
+                        progress_file,
+                        {
+                            "type": "case_done",
+                            "suite": args.suite,
+                            "index": idx,
+                            "case_id": result.case_id,
+                            "name": result.name,
+                            "status": result.status,
+                            "reason": result.reason,
+                            "duration_seconds": result.duration_seconds,
+                            "log_path": str(case_log_dir / f"{result.case_id}.log") if case_log_dir is not None else None,
+                        },
+                    )
+                    if verbose:
+                        if live_progress:
+                            clear_progress_line()
+                        print(f"==> {case_id}")
+                        print(f"    {result.status:5s}  {format_seconds(result.duration_seconds)}  {result.name}")
+                        if result.message:
+                            print(f"    note: {result.message}")
+                        if live_progress:
+                            done_count = sum(1 for r in results if r is not None)
+                            passed = sum(1 for r in results if r is not None and r.status == "pass")
+                            failed = sum(1 for r in results if r is not None and r.status == "fail")
+                            crashed = sum(1 for r in results if r is not None and r.status == "crash")
+                            now = time.perf_counter()
+                            running_labels = []
+                            for p in list(pending)[:4]:
+                                _, running_case_id, started_at = future_to_meta[p]
+                                running_labels.append(f"{running_case_id}({int(now - started_at)}s)")
+                            line = format_progress_line(len(case_ids), done_count, passed, failed, crashed, running_labels)
+                            print_progress_line(line)
+
+            if live_progress:
+                clear_progress_line()
+
+    finalized_results = [r for r in results if r is not None]
 
     suite_seconds = time.perf_counter() - suite_start
-    summary = build_summary(args.suite, results, suite_seconds)
+    summary = build_summary(args.suite, finalized_results, suite_seconds)
+    emit_progress_event(
+        progress_file,
+        {
+            "type": "suite_done",
+            "suite": args.suite,
+            "total_cases": summary["total_cases"],
+            "passed": summary["passed"],
+            "failed": summary["failed"],
+            "crashed": summary["crashed"],
+            "pass_rate": summary["pass_rate"],
+            "suite_seconds": summary["suite_seconds"],
+        },
+    )
 
     if args.json:
         print(json.dumps(summary, ensure_ascii=False))

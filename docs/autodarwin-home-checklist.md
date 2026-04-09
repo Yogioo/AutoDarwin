@@ -1,6 +1,6 @@
 # AutoDarwin 到家后执行清单
 
-> 目的：先确认当前版本可稳定运行，再决定是否做并发评测改造。
+> 目的：先确认当前版本可稳定运行。默认优先并发评测（更快）；仅在需要逐条观察/多轮交互排障时再用串行。
 
 ## 0. 同步代码
 
@@ -15,7 +15,7 @@ git pull
 ## 1. 快速健康检查（必须先做）
 
 ```bat
-autodarwin.bat smoke
+autodarwin.bat smoke --jobs 2
 ```
 
 预期：
@@ -27,7 +27,15 @@ autodarwin.bat smoke
 ## 2. 主集检查（确认稳定性）
 
 ```bat
-autodarwin.bat core
+autodarwin.bat core-ui
+```
+
+> `core-ui` 会自动开始评测并自动打开 Web UI（Windows，浏览器），多列显示每个 case 全量信息（Prompt/任务/聊天/日志）；全部完成后会弹出总结窗口。
+
+手动模式（可选）：
+```bat
+autodarwin.bat core --jobs 4 --progress-file .autodarwin/progress.jsonl
+python tools/progress_view.py --file .autodarwin/progress.jsonl
 ```
 
 预期：
@@ -45,6 +53,8 @@ python evolve.py --suite core --rounds 3 --pi-cmd "cmd /c pi"
 ```
 
 建议先不加 `--repeats`，先看链路是否稳定。
+
+> 并发建议：常规回归优先 `--jobs N`。仅当你要盯单个 case 的完整会话输出时，用 `--jobs 1`。
 
 ---
 
@@ -67,13 +77,14 @@ autodarwin.bat holdout
 
 ---
 
-## 6. 下一步计划（并发评测）
+## 6. 并发评测使用约定（已支持）
 
-若第 1~3 步都通过，下一步改造目标：
-- 在 `benchmarks/evaluator.py` 增加 `--jobs N`
-- case 级并发执行（多进程）
-- 保持结果格式兼容（`--json` 输出不变）
+- 默认优先并发：`autodarwin.bat core --jobs 4`
+- 串行排障：`autodarwin.bat core --jobs 1`
+- JSON/自动化采集：`python benchmarks/evaluator.py core --jobs 4 --json`
 
-验收目标：
-- `smoke/core` 结果与串行一致
-- 总耗时明显下降
+进度显示：
+- 默认 `--progress auto`：仅在交互终端显示单行进度，不刷屏
+- 强制开启：`--progress on`
+- 关闭：`--progress off`
+- 旁路可视化：`--progress-file .autodarwin/progress.jsonl` + `python tools/progress_view.py`

@@ -14,38 +14,56 @@ if not defined PY_CMD (
 if "%~1"=="" goto default_run
 
 if /I "%~1"=="smoke" (
-  call %PY_CMD% benchmarks\evaluator.py smoke
+  call %PY_CMD% benchmarks\evaluator.py smoke %2 %3 %4 %5 %6 %7 %8 %9
   exit /b %errorlevel%
 )
 
 if /I "%~1"=="core" (
-  call %PY_CMD% benchmarks\evaluator.py core
+  call %PY_CMD% benchmarks\evaluator.py core %2 %3 %4 %5 %6 %7 %8 %9
   exit /b %errorlevel%
 )
 
 if /I "%~1"=="holdout" (
-  call %PY_CMD% benchmarks\evaluator.py holdout
+  call %PY_CMD% benchmarks\evaluator.py holdout %2 %3 %4 %5 %6 %7 %8 %9
+  exit /b %errorlevel%
+)
+
+if /I "%~1"=="smoke-ui" (
+  call %PY_CMD% tools\eval_with_ui.py smoke %2 %3 %4 %5 %6 %7 %8 %9
+  exit /b %errorlevel%
+)
+
+if /I "%~1"=="core-ui" (
+  call %PY_CMD% tools\eval_with_ui.py core %2 %3 %4 %5 %6 %7 %8 %9
+  exit /b %errorlevel%
+)
+
+if /I "%~1"=="holdout-ui" (
+  call %PY_CMD% tools\eval_with_ui.py holdout %2 %3 %4 %5 %6 %7 %8 %9
+  exit /b %errorlevel%
+)
+
+if /I "%~1"=="eval-ui" (
+  set "SUITE=%~2"
+  if "%SUITE%"=="" set "SUITE=core"
+  call %PY_CMD% tools\eval_with_ui.py %SUITE% %3 %4 %5 %6 %7 %8 %9
   exit /b %errorlevel%
 )
 
 if /I "%~1"=="eval" (
   set "SUITE=%~2"
   if "%SUITE%"=="" set "SUITE=smoke"
-  shift
-  shift
-  call %PY_CMD% benchmarks\evaluator.py %SUITE% %*
+  call %PY_CMD% benchmarks\evaluator.py %SUITE% %3 %4 %5 %6 %7 %8 %9
   exit /b %errorlevel%
 )
 
 if /I "%~1"=="evolve" (
-  shift
-  call %PY_CMD% evolve.py %*
+  call %PY_CMD% evolve.py %2 %3 %4 %5 %6 %7 %8 %9
   exit /b %errorlevel%
 )
 
 if /I "%~1"=="replay" (
-  shift
-  call %PY_CMD% replay.py %*
+  call %PY_CMD% replay.py %2 %3 %4 %5 %6 %7 %8 %9
   exit /b %errorlevel%
 )
 
