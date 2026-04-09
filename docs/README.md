@@ -20,3 +20,4 @@
 - `plans/mvp-v0.md`
 - `plans/mvp-unfinished.md`
 - `plans/mvp-subagent-plan.md`
+- `plans/autoresearch-core-notes.md`（提取自 karpathy/autoresearch 的核心思路与落地映射）

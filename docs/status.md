@@ -1,51 +1,77 @@
-# AutoDarwin 文档实现状态（按当前代码）
+# AutoDarwin 项目现状（当前代码）
 
-最后核对：2026-04-09
+最后更新：2026-04-09
 
-## 已实现（可直接用）
+## 现状结论（先说结论）
+
+- 当前项目主线已可用：`评测 -> 进化 -> 回放` 闭环可跑。
+- 项目内已有“现状文件”：`docs/status.md`（即本文件）。
+- 目前**未直接集成** `auto research` 开源库；现阶段是参考其“研究组织/分工”理念。
+
+## 已实现（可直接使用）
 
 - 评测执行器：`benchmarks/evaluator.py`
-  - suite 加载：`smoke/core/holdout`
-  - case 元数据生效：`workspace`、`check.type(script/command)`、`tools`
-  - 约束检查：`forbid/allow paths`、`forbid/allow globs`、`max_changed_files`、`max_changed_lines`
-  - 并发评测：`--jobs N`
-  - 进度与日志：`--progress auto|on|off`、`--progress-file`、`--case-log-dir`
-  - 结构化输出：`--json`（含 `reason_counts`/`case_results`）
+  - suite：`smoke/core/holdout`
+  - 并发：`--jobs N`
+  - case 元数据：`workspace`、`check.type(script/command)`、`tools`
+  - 约束：`forbid/allow paths`、`forbid/allow globs`、`max_changed_files`、`max_changed_lines`
+  - 输出：`--json`（含 `reason_counts` / `case_results`）
 
 - 运行层：`runner.py`
   - `pi --mode rpc --no-session`
   - 支持 `--tools`、`--seed`、`--timeout`
 
 - 进化闭环：`evolve.py`
-  - mutation → baseline/candidate 评测 → keep/discard
+  - mutation -> baseline/candidate 评测 -> keep/discard
   - `--repeats`、`--margin`
-  - 同分耗时 tie-break（`avg_duration`）
+  - tie-break：同分比 `avg_duration`
   - `--holdout-suite` + `--holdout-every`
-  - 结果记录：`results.tsv` + `results.jsonl`
-  - prompt 历史快照：`.autodarwin/history/*.md`
+  - 记录：`results.tsv` + `results.jsonl`
 
 - 回放：`replay.py`
-  - `--round-id` / `--candidate-hash` 重放
+  - `--round-id` / `--candidate-hash`
 
-- UI 与入口
+- 入口与可视化
   - `autodarwin.bat`：`smoke|core|holdout|eval-ui|evolve|replay`
   - `tools/eval_with_ui.py`、`tools/progress_web.py`、`tools/progress_view.py`
 
-## 部分实现 / 仍待增强
+## 基准集现状
 
-- 失败归因已具备基础分类（`agent_*`/`check_*`/`constraint_failed`），但还未细到 tool-error 子类与命令级标签。
-- 约束系统已覆盖常用规则，但未实现更复杂策略（如命令白名单、目录配额）。
+- smoke：4 个 case（`case_001,003,006,008`）
+- core：8 个 case（`case_001~008`）
+- holdout：5 个 case（`case_009~013`）
 
-## 过期/历史文档判断
+## 与 auto research 理念的对齐状态
 
-- `plans/mvp-subagent-plan.md`：任务拆解文档，绝大多数事项已完成；现主要作为历史记录。
-- `plans/mvp-v0.md`：设计基线仍有参考价值，但其中部分目录示例已不是当前真实结构（历史语境）。
-- `plans/future-plan.md`：未来路线文档，不是当前实现清单。
+- 已对齐：
+  - 小闭环优先（先跑通再扩展）
+  - 可观测性（进度事件 + case 日志 + JSON 汇总）
+  - 可回放（按轮次/候选复现）
 
-## 这次整理动作
+- 未落地（当前缺口）：
+  - 尚未引入 `auto research` 库本体（代码级依赖为 0）
+  - 尚未形成“Researcher/Mutator/Evaluator/Archivist”多角色自动协作流
+  - research 型 benchmark 仍偏少（现有 case 以本地编辑任务为主）
 
-- 已移除 `docs/` 根目录下的重复“已迁移”占位文件，统一只保留：
-  - `docs/guides/*`
-  - `docs/benchmarks/*`
-  - `docs/plans/*`
-  - `docs/status.md`
+## AutoResearch（karpathy/autoresearch）核心思路提取
+
+已新增提取文档：`docs/plans/autoresearch-core-notes.md`
+
+提取结论（摘要）：
+- 核心范式：最小闭环 + 固定预算评测 + keep/discard + 结果账本化
+- 人类主要迭代策略文档，Agent主要执行实验
+- AutoDarwin 当前架构与该范式同构，差异主要在任务域
+
+## 下一步（最小可行）
+
+1. 保持现有闭环不动，先新增 1~2 个 research 型 case。
+2. 在 `.pi/SYSTEM.md` 增加“先研究后修改”的最小策略约束。
+3. 用 `core + holdout` 做对比，确认提升是否稳定。
+
+## 运行基线命令
+
+```bat
+autodarwin.bat smoke --jobs 2
+autodarwin.bat core --jobs 4
+python evolve.py --suite core --rounds 3 --pi-cmd "cmd /c pi"
+```
